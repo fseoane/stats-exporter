@@ -48,7 +48,7 @@ struct FileSystemUsage {
     used_percentage: String,
 }
 
-const VERSION: String = String::from("1.0.20240315");
+const VERSION: &str = "1.0.20240315";
 
 // ------------------------------------------------------------------
 
