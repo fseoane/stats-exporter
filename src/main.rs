@@ -393,8 +393,9 @@ async fn main() {
         for fs in file_systems{
             println!("                             ´{}´->´{}´",fs[0],fs[1]);    
         }
+        println!("  File Systems Sample secs:  ´{}´", file_systems_sample_secs);
+    
     }
-    println!("  File Systems Sample secs:  ´{}´", file_systems_sample_secs);
     
     println!("------------------------------------------------------------------------\n");
 
