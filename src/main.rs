@@ -394,7 +394,8 @@ async fn main() {
             println!("                             ´{}´->´{}´",fs[0],fs[1]);    
         }
         println!("  File Systems Sample secs:  ´{}´", file_systems_sample_secs);
-    
+    } else {
+        println!("  No filesystem is configured to gather usage stats data");
     }
     
     println!("------------------------------------------------------------------------\n");
