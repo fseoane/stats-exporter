@@ -28,9 +28,22 @@ use axum::{
     Json,
 };
 
+// ------------------------------------------------------------------
+
+const VERSION: &str = "1.0.20240315";
+
+// ------------------------------------------------------------------
+
 
 #[derive(Serialize,Deserialize,Clone)]
-struct Usage {
+struct Stats {
+    basic_stats: BasicStats,
+    file_systems_stats:Vec<FileSystemStats>,
+    kubernetes_stats:Vec<KubernetesStats>
+}
+
+#[derive(Serialize,Deserialize,Clone)]
+struct BasicStats {
     cpu: String,
     ram: String,
     root_fs: String,
@@ -38,17 +51,30 @@ struct Usage {
     net_down_kbps: String,
     net_up_kbps: String,
     temperature: String,
-    file_systems:Vec<FileSystemUsage>
 }
 
 #[derive(Serialize,Deserialize,Clone)]
-struct FileSystemUsage {
-    description:String,
-    mount_point: String,   // device in the form of  /dev/disk/by-uuid/2ec8b2d7-7ef5-4b4b-9a03-d19bfe4c76c0
-    used_percentage: String,
+struct FileSystemStats {
+    fs_name:String,
+    fs_mount_point: String,   // device in the form of  /dev/disk/by-uuid/2ec8b2d7-7ef5-4b4b-9a03-d19bfe4c76c0
+    fs_used_percentage: String,
 }
 
-const VERSION: &str = "1.0.20240315";
+#[derive(Serialize,Deserialize,Clone)]
+struct KubernetesStats {
+    node_stats:Vec<KubernetesNodeStats>,
+}
+
+#[derive(Serialize,Deserialize,Clone)]
+struct KubernetesNodeStats {
+    node_role: String,
+    node_name: String,
+    node_ip: String,
+    node_basic_stats: BasicStats,
+    node_pods: Vec<String>,
+    node_pods_max: usize,
+}
+
 
 // ------------------------------------------------------------------
 
@@ -116,7 +142,7 @@ fn get_fs_use(req_disk: &sysinfo::Disks, mount_fs: &str) -> f32{
 }
 
 // Get the total network (down) usage
-fn get_tot_ntwk_dwn(req_net: &sysinfo::Networks, sample_secs: &i32) -> i32{
+fn get_tot_ntwk_dwn(req_net: &sysinfo::Networks, polling_secs: &i32) -> i32{
     // Get the total bytes recieved by every network interface
     let mut rcv_tot: Vec<i32> = Vec::new();
     for (_interface_name, ntwk) in req_net.list() { 
@@ -125,13 +151,13 @@ fn get_tot_ntwk_dwn(req_net: &sysinfo::Networks, sample_secs: &i32) -> i32{
 
     // Total them and convert the bytes to KB
     let ntwk_tot: i32 = rcv_tot.iter().sum();
-    let ntwk_processed = (((ntwk_tot*8)/sample_secs) / 1024) as i32;
+    let ntwk_processed = (((ntwk_tot*8)/polling_secs) / 1024) as i32;
 
     ntwk_processed
 }
 
 // Get the total network (up) usage
-fn get_tot_ntwk_up(req_net: &sysinfo::Networks, sample_secs: &i32) -> i32{
+fn get_tot_ntwk_up(req_net: &sysinfo::Networks, polling_secs: &i32) -> i32{
     // Get the total bytes sent by every network interface
     let mut snd_tot: Vec<i32> = Vec::new();
     for (_interface_name, ntwk) in req_net.list() { 
@@ -140,36 +166,36 @@ fn get_tot_ntwk_up(req_net: &sysinfo::Networks, sample_secs: &i32) -> i32{
 
     // Total them and convert the bytes to KB
     let ntwk_tot: i32 = snd_tot.iter().sum();
-    let ntwk_processed = (((ntwk_tot*8)/sample_secs) / 1024) as i32;
+    let ntwk_processed = (((ntwk_tot*8)/polling_secs) / 1024) as i32;
 
     ntwk_processed
 }
 
 // Get the network (down)  usage for an interface
-fn get_iface_ntwk_dwn(req_net: &sysinfo::Networks, sample_secs: &i32, iface: &str) -> i32{
+fn get_iface_ntwk_dwn(req_net: &sysinfo::Networks, polling_secs: &i32, iface: &str) -> i32{
     // Get the total bytes recieved by every network interface
     let mut rcv_tot: Vec<i32> = Vec::new();
     for (interface_name, ntwk) in req_net.list() { 
         if interface_name == iface {
-            //println!("{:?} rx:{} in {} secs --> {} KBps", interface_name,ntwk.received(),sample_secs,((ntwk.received() as i32 /sample_secs) / 1000) as i32 );
+            //println!("{:?} rx:{} in {} secs --> {} KBps", interface_name,ntwk.received(),polling_secs,((ntwk.received() as i32 /polling_secs) / 1000) as i32 );
             rcv_tot.push(ntwk.received() as i32);
         } 
     }
 
     // Total them and convert the bytes to KB
     let ntwk_tot: i32 = rcv_tot.iter().sum();
-    let ntwk_processed = (((ntwk_tot*8)/sample_secs) / 1024) as i32;
+    let ntwk_processed = (((ntwk_tot*8)/polling_secs) / 1024) as i32;
 
     ntwk_processed
 }
 
 // Get the network (up) usage for an interface
-fn get_iface_ntwk_up(req_net: &sysinfo::Networks, sample_secs: &i32, iface: &str) -> i32{
+fn get_iface_ntwk_up(req_net: &sysinfo::Networks, polling_secs: &i32, iface: &str) -> i32{
     // Get the total bytes sent by every network interface
     let mut snd_tot: Vec<i32> = Vec::new();
     for (interface_name, ntwk) in req_net.list() { 
         if interface_name == iface {
-            //println!("{:?} rx:{} in {} secs --> {} KBps", interface_name,ntwk.transmitted(),sample_secs,((ntwk.transmitted() as i32 /sample_secs) / 1000) as i32 );
+            //println!("{:?} rx:{} in {} secs --> {} KBps", interface_name,ntwk.transmitted(),polling_secs,((ntwk.transmitted() as i32 /polling_secs) / 1000) as i32 );
             snd_tot.push(ntwk.transmitted() as i32);
         } 
          
@@ -177,7 +203,7 @@ fn get_iface_ntwk_up(req_net: &sysinfo::Networks, sample_secs: &i32, iface: &str
 
     // Total them and convert the bytes to KB
     let ntwk_tot: i32 = snd_tot.iter().sum();
-    let ntwk_processed = (((ntwk_tot*8)/sample_secs) / 1024) as i32;
+    let ntwk_processed = (((ntwk_tot*8)/polling_secs) / 1024) as i32;
 
     ntwk_processed
 }
@@ -198,7 +224,7 @@ fn get_temp(req_comp: &sysinfo::Components, temp_item: &str) -> i32{
 // ------------------------------------------------------------------
 
 // API HANDLER: get statistics
-async fn api_get_stats(State(stats_data): State<Arc<Mutex<Vec<Usage>>>>,) -> Json<Vec<Usage>> {
+async fn api_get_stats(State(stats_data): State<Arc<Mutex<Vec<Stats>>>>,) -> Json<Vec<Stats>> {
     let stats = stats_data.lock().unwrap();
     axum::Json(stats.to_vec())
 }
@@ -225,15 +251,15 @@ async fn api_get_ntwk_items() -> Json<Vec<String>> {
 
 // ------------------------------------------------------------------
 
-fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Usage>>>) {
+fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Usage>>>) {
 
 
-    println!("Building and refreshing stats every {} seconds keeping a history depth of {}",sample_secs.to_string(),history_depth.to_string());
+    println!("Building and refreshing stats every {} seconds keeping a history depth of {}",polling_secs.to_string(),history_depth.to_string());
     
     let mut file_systems_refresh_cycles: u64 = 900;
 
-    if file_systems_sample_secs > 0 {
-        file_systems_refresh_cycles = ((60 as f32/sample_secs as f32)*(file_systems_sample_secs as f32/60 as f32)) as u64;
+    if file_systems_polling_secs > 0 {
+        file_systems_refresh_cycles = ((60 as f32/polling_secs as f32)*(file_systems_polling_secs as f32/60 as f32)) as u64;
     }
     
     let mut loop_count: u64 = 0;
@@ -245,7 +271,7 @@ fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,
     let mut current_comp: sysinfo::Components=sysinfo::Components::new();
     
     let is_file_systems = file_systems.len()>0;
-    let mut last_fs_usage : Vec<FileSystemUsage> = Vec::new();
+    let mut last_fs_usage : Vec<FileSystemStats> = Vec::new();
 
     if temp_item.len() >0 {
         current_comp = sysinfo::Components::new_with_refreshed_list();
@@ -256,7 +282,7 @@ fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,
         {
             let mut stats = stats_data.lock().unwrap();
 
-            let mut fs_usage : Vec<FileSystemUsage> = Vec::new();
+            let mut fs_usage : Vec<FileSystemStats> = Vec::new();
 
             // Refresh the system
             current_sys.refresh_all();
@@ -280,12 +306,12 @@ fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,
             let ntwk_dwn ;
             let ntwk_up ;
             if iface == "total" {
-                ntwk_dwn = get_tot_ntwk_dwn(&current_net,&sample_secs);
-                ntwk_up = get_tot_ntwk_up(&current_net,&sample_secs);
+                ntwk_dwn = get_tot_ntwk_dwn(&current_net,&polling_secs);
+                ntwk_up = get_tot_ntwk_up(&current_net,&polling_secs);
             }
             else{
-                ntwk_dwn = get_iface_ntwk_dwn(&current_net,&sample_secs,&iface);
-                ntwk_up = get_iface_ntwk_up(&current_net,&sample_secs,&iface);
+                ntwk_dwn = get_iface_ntwk_dwn(&current_net,&polling_secs,&iface);
+                ntwk_up = get_iface_ntwk_up(&current_net,&polling_secs,&iface);
             }
 
             if is_file_systems {
@@ -294,10 +320,10 @@ fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,
                     for fs in file_systems.clone(){
                         let fs_usage_percent= get_fs_use(&current_disks, &fs[1]);
                         fs_usage.push(
-                            FileSystemUsage{
-                                description: fs[0].clone(),
-                                mount_point: fs[1].clone(),
-                                used_percentage: format! ("{:.1}",fs_usage_percent),
+                            FileSystemStats{
+                                fs_name: fs[0].clone(),
+                                fs_mount_point: fs[1].clone(),
+                                fs_used_percentage: format! ("{:.1}",fs_usage_percent),
                             }
                         )
                     }
@@ -312,15 +338,18 @@ fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,
             }
             
             stats.push(
-                Usage{
-                    cpu: format! ("{:.1}",cpu_avg), 
-                    ram: format! ("{:.1}",ram_prcnt), 
-                    root_fs: format! ("{:.1}",root_prcnt),
-                    swap_fs: format! ("{:.1}",swp_prcnt),
-                    net_down_kbps: format! ("{:.1}",ntwk_dwn),
-                    net_up_kbps: format! ("{:.1}",ntwk_up),
-                    temperature: format! ("{:.1}",temperature),
-                    file_systems: fs_usage.clone(),
+                Stats{
+                    basic_stats: BasicStats{
+                        cpu: format! ("{:.1}",cpu_avg), 
+                        ram: format! ("{:.1}",ram_prcnt), 
+                        root_fs: format! ("{:.1}",root_prcnt),
+                        swap_fs: format! ("{:.1}",swp_prcnt),
+                        net_down_kbps: format! ("{:.1}",ntwk_dwn),
+                        net_up_kbps: format! ("{:.1}",ntwk_up),
+                        temperature: format! ("{:.1}",temperature),
+                    },
+                    file_systems_stats: fs_usage.clone(),
+                    kubernetes_stats: Vec::new(),
                 }
             );
 
@@ -333,7 +362,7 @@ fn build_stats(sample_secs:i32,file_systems_sample_secs:i32,history_depth:usize,
             // println!("------------------------------------------------------------------------------------------------");
         }
         // Wait sample_sec seconds 
-        thread::sleep(time::Duration::from_secs(sample_secs.try_into().unwrap()));
+        thread::sleep(time::Duration::from_secs(polling_secs.try_into().unwrap()));
         loop_count += 1;
     }
 }
@@ -353,28 +382,50 @@ async fn main() {
     let config_filename = format!("{}/{}",prog_path,conf_path_and_file); 
     let config_data: ConfigData = read_config(config_filename.as_str());
 
-    let listen_ip_addr: String = config_data.config.listen_ip_addr;
-    let listen_port: String = config_data.config.listen_port;
-    let sample_secs: i32 = config_data.config.sample_secs.try_into().unwrap();
-    let history_depth: usize = config_data.config.history_depth;
-    let iface: String = config_data.config.iface;
+    //API config values
+    let listen_ip_addr: String = config_data.api_config.listen_ip_addr;
+    let listen_port: String = config_data.api_config.listen_port;
+    let polling_secs: i32 = config_data.api_config.polling_secs.try_into().unwrap();
+    let history_depth: usize = config_data.api_config.history_depth;
+    
+    // Cpu, Mem, Disk, Network config values
+    if config_data.filesystems_config.is_some(){
+        let iface: String = config_data.cmdn_config.unwrap().iface;
     let iface_clone: String = iface.clone();
     let is_iface_total: bool = iface=="total";
-    let temp_item: String = config_data.config.temp_item;
+    let temp_item: String = config_data.cmdn_config.unwrap().temperature_item;
     let temp_item_clone: String = temp_item.clone();
     let is_temp_item: bool = temp_item.len()>0;
+    }
 
-    let file_systems = match config_data.config.file_systems.is_some(){
-        true => config_data.config.file_systems.unwrap(),
-        _ => Vec::new()
-    };
-    let file_systems_clone = file_systems.clone();
-    let is_file_systems: bool = file_systems.len()>0;
+    // File Systems config values
+    if config_data.filesystems_config.is_some(){
+        // let file_systems_clone = config_data
+        //     .filesystems_config
+        //     .unwrap()
+        //     .clone();
+        let file_systems= config_data.filesystems_config
+            .unwrap()
+            .file_systems;
+        let is_file_systems = file_systems.len()>0;
+        let file_systems_polling_secs = config_data.filesystems_config
+            .unwrap()
+            .polling_secs
+            .try_into()
+            .unwrap();
+    }
+
+    // let file_systems = match config_data.filesystems_config.is_some(){
+    //     true => config_data.filesystems_config.unwrap().file_systems,
+    //     _ => Vec::new()
+    // };
+    // let file_systems_clone = file_systems.clone();
+    // let is_file_systems: bool = file_systems.len()>0;
     
-    let file_systems_sample_secs:i32 = match config_data.config.file_systems_sample_secs.is_some(){
-        true => config_data.config.file_systems_sample_secs.unwrap().try_into().unwrap(),
-        _ => 0,
-    };
+    // let file_systems_polling_secs:i32 = match config_data.filesystems_config.is_some(){
+    //     true => config_data.filesystems_config.unwrap().polling_secs.try_into().unwrap(),
+    //     _ => 0,
+    // };
 
     println!("------------------------------------------------------------------------");
     println!("           stats-exporter v.{}", VERSION); 
@@ -384,7 +435,7 @@ async fn main() {
     println!("------------------------------------------------------------------------");
     println!("  Listen ip address:         ´{}´", listen_ip_addr);
     println!("  Listen port:               ´{}´", listen_port);
-    println!("  Sample seconds:            ´{}´", sample_secs.to_string());
+    println!("  Sample seconds:            ´{}´", polling_secs.to_string());
     println!("  History depth:             ´{}´", history_depth.to_string());
     println!("  Network Interface:         ´{}´", iface);
     println!("  Temperature item:          ´{}´", temp_item);
@@ -393,7 +444,7 @@ async fn main() {
         for fs in file_systems{
             println!("                             ´{}´->´{}´",fs[0],fs[1]);    
         }
-        println!("  File Systems Sample secs:  ´{}´", file_systems_sample_secs);
+        println!("  File Systems Sample secs:  ´{}´", file_systems_polling_secs);
     } else {
         println!("  No filesystem is configured to gather usage stats data");
     }
@@ -404,7 +455,7 @@ async fn main() {
     let stats_thread_data = Arc::clone(&stats_data);
 
     std::thread::spawn( move || {
-        build_stats(sample_secs,file_systems_sample_secs,history_depth,iface,temp_item,file_systems_clone,stats_thread_data);
+        build_stats(polling_secs,file_systems_polling_secs,history_depth,iface,temp_item,file_systems,stats_thread_data);
     });
 
     let api_thread_data = Arc::clone(&stats_data);
@@ -420,7 +471,7 @@ and\n    .-total bandwitdth (all interfaces)\n
 every {} seconds with a history depth of {} \n\n
 Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
                 temp_item_clone.to_string(),
-                sample_secs.to_string(),
+                polling_secs.to_string(),
                 history_depth.to_string()
             );
         } else { 
@@ -430,7 +481,7 @@ Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- ro
 and total bandwitdth (all interfaces)\n
 every {} seconds with a history depth of {} \n\n
 Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
-                sample_secs.to_string(),
+                polling_secs.to_string(),
                 history_depth.to_string()
             );
         }
@@ -445,7 +496,7 @@ every {} seconds with a history depth of {} \n\n
 Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
                 temp_item_clone.to_string(),
                 iface_clone.to_string(),
-                sample_secs.to_string(),
+                polling_secs.to_string(),
                 history_depth.to_string()
             );
         } else {
@@ -456,7 +507,7 @@ and\n    .-bandwitdth on interface {}\n
 every {} seconds with a history depth of {} \n\n
 Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
                 iface_clone.to_string(),
-                sample_secs.to_string(),
+                polling_secs.to_string(),
                 history_depth.to_string()
             );
         }

@@ -2,30 +2,57 @@
 use serde_derive::{Serialize, Deserialize};
 use std::fs;
 use toml;
-use log::{error, info, warn};
+//use log::{error, info, warn};
 
 // Top level struct to hold the TOML data.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize,Clone)]
 pub struct ConfigData {
-    pub config: GeneralConfig,
+    pub api_config: APIConfig,
+    pub cmdn_config: Option<CMDNStatsConfig>,
+    pub filesystems_config: Option<FileSystemsConfig>,
+    pub kubernetes_config: Option<KubernetesConfig>,
 }
-#[derive(Serialize, Deserialize)]
-pub struct GeneralConfig {
+#[derive(Serialize, Deserialize,Clone)]
+pub struct APIConfig {
     pub listen_ip_addr: String,
     pub listen_port: String,
-    pub sample_secs: usize,
+    pub polling_secs: usize,
     pub history_depth: usize,
+}
+#[derive(Serialize, Deserialize,Clone)]
+pub struct CMDNStatsConfig {
+    pub cpu: bool,
+    pub mem: bool,
+    pub root_fs: bool,
+	pub swap_fs: bool,
+	pub net: bool,
 	pub iface: String,
-    pub temp_item: String,
-    pub file_systems: Option<Vec<[String;2]>>,
-    pub file_systems_sample_secs: Option<usize>,
+    pub temperature: bool,
+    pub temperature_item: String,
+}
+#[derive(Serialize, Deserialize,Clone)]
+pub struct FileSystemsConfig {
+    pub file_systems: Vec<[String;2]>,
+    pub polling_secs: usize,
+}
+#[derive(Serialize, Deserialize,Clone)]
+pub struct KubernetesConfig {
+    pub master_nodes_ip: Vec<[String;2]>,
+    pub worker_nodes_ip: Vec<[String;2]>,
+    pub exclude_namespaces: Vec<String>,
+    pub polling_secs: usize,
+}
+#[derive(Serialize, Deserialize,Clone)]
+pub struct DescrValuePair {
+    pub description: String,
+    pub value: String,
 }
 
 pub fn read_config(toml_filename: &str) -> ConfigData{
     // Read the contents of the file using a `match` block 
     // to return the `data: Ok(c)` as a `String` 
     // or handle any `errors: Err(_)`.
-    let toml_contents:String = match fs::read_to_string(toml_filename) {
+    let toml_contents:String = match std::fs::read_to_string(toml_filename) {
         // If successful return the files text as `contents`.
         // `c` is a local variable.
         Ok(c) => c,
@@ -56,4 +83,14 @@ pub fn read_config(toml_filename: &str) -> ConfigData{
     };
 
     return config_data;
+}
+
+fn write_config(filename: &str,configdata: &ConfigData){
+    let toml_string = toml::to_string(configdata)
+        .expect("\n[!] Could not encode TOML value")
+        .replace("\"", "")
+        .replace(" ", "");
+
+    std::fs::write(filename, toml_string)
+        .expect("\n[!] Could not write config to file!");
 }
