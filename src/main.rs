@@ -78,24 +78,6 @@ struct KubernetesNodeStats {
 
 // ------------------------------------------------------------------
 
-#[derive(Serialize,Deserialize,Clone)]
-struct Usage {
-    cpu: String,
-    ram: String,
-    root_fs: String,
-    swap_fs: String,
-    net_down_kbps: String,
-    net_up_kbps: String,
-    temperature: String,
-    file_systems:Vec<FileSystemUsage>
-}
-
-#[derive(Serialize,Deserialize,Clone)]
-struct FileSystemUsage {
-    description:String,
-    mount_point: String,   // device in the form of  /dev/disk/by-uuid/2ec8b2d7-7ef5-4b4b-9a03-d19bfe4c76c0
-    used_percentage: String,
-}
 
 // ------------------------------------------------------------------
 
@@ -272,7 +254,7 @@ async fn api_get_ntwk_items() -> Json<Vec<String>> {
 
 // ------------------------------------------------------------------
 
-fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Usage>>>) {
+fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Stats>>>) {
 
 
     println!("Building and refreshing stats every {} seconds keeping a history depth of {}",polling_secs.to_string(),history_depth.to_string());
@@ -409,34 +391,34 @@ async fn main() {
     let polling_secs: i32 = config_data.api_config.polling_secs.try_into().unwrap();
     let history_depth: usize = config_data.api_config.history_depth;
 
-    let get_cpu: bool ;
+    let get_cpu: bool;
     let get_mem: bool;
-    let get_root_fs: bool ;
-    let get_swap_fs: bool ;
-    let get_net: bool ;
-    let get_temperature: bool ;
+    let get_root_fs: bool;
+    let get_swap_fs: bool;
+    let get_net: bool;
+    let get_temperature: bool;
 
-    let iface: String ;
-    let iface_clone: String ;
-    let is_iface_total: bool ;
-    let temp_item: String ;
-    let temp_item_clone: String ;
-    let is_temp_item: bool ;
+    let iface: String;
+    let iface_clone: String;
+    let is_iface_total: bool;
+    let temp_item: String;
+    let temp_item_clone: String;
+    let is_temp_item: bool;
 
 
     // Cpu, Mem, Disk, Network config values
     if config_data.cmdn_config.is_some(){
-        get_cpu = config_data.cmdn_config.unwrap().get_cpu;
-        get_mem = config_data.cmdn_config.unwrap().get_mem==true;
-        get_root_fs = config_data.cmdn_config.unwrap().get_root_fs==true;
-        get_swap_fs = config_data.cmdn_config.unwrap().get_swap_fs==true;
-        get_net = config_data.cmdn_config.unwrap().get_net==true;
-        get_temperature = config_data.cmdn_config.unwrap().get_temperature==true;
+        get_cpu = config_data.cmdn_config.clone().unwrap().get_cpu;
+        get_mem = config_data.cmdn_config.clone().unwrap().get_mem;
+        get_root_fs = config_data.cmdn_config.clone().unwrap().get_root_fs;
+        get_swap_fs = config_data.cmdn_config.clone().unwrap().get_swap_fs;
+        get_net = config_data.cmdn_config.clone().unwrap().get_net;
+        get_temperature = config_data.cmdn_config.clone().unwrap().get_temperature;
 
-        iface = config_data.cmdn_config.unwrap().iface;
+        iface = config_data.cmdn_config.clone().unwrap().iface;
         iface_clone = iface.clone();
         is_iface_total = iface=="total";
-        temp_item = config_data.cmdn_config.unwrap().temperature_item;
+        temp_item = config_data.cmdn_config.clone().unwrap().temperature_item;
         temp_item_clone = temp_item.clone();
         is_temp_item = temp_item.len()>0;
     }
@@ -467,10 +449,12 @@ async fn main() {
         //     .unwrap()
         //     .clone();
         file_systems= config_data.file_systems_config
+            .clone()
             .unwrap()
             .file_systems;
         is_file_systems = file_systems.len()>0;
         file_systems_polling_secs = config_data.file_systems_config
+            .clone()
             .unwrap()
             .polling_secs
             .try_into()
