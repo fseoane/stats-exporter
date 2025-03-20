@@ -523,7 +523,6 @@ async fn main() {
 
     // Kubernetes config values
     if config_data.kubernetes_config.is_some(){
-
         master_nodes_ip = config_data.kubernetes_config
             .clone()
             .unwrap()
