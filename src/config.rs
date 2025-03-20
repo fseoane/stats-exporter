@@ -16,7 +16,6 @@ pub struct ConfigData {
 pub struct APIConfig {
     pub listen_ip_addr: String,
     pub listen_port: String,
-    pub polling_secs: usize,
     pub history_depth: usize,
 }
 #[derive(Serialize, Deserialize,Clone)]
@@ -29,6 +28,7 @@ pub struct CMDNStatsConfig {
 	pub iface: String,
     pub get_temperature: bool,
     pub temperature_item: String,
+    pub polling_secs: usize,
 }
 #[derive(Serialize, Deserialize,Clone)]
 pub struct FileSystemsConfig {

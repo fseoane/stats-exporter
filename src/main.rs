@@ -254,16 +254,22 @@ async fn api_get_ntwk_items() -> Json<Vec<String>> {
 
 // ------------------------------------------------------------------
 
-fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Stats>>>) {
+fn build_stats(cmdn_polling_secs:i32,file_systems_polling_secs:i32,kubernetes_polling_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Stats>>>) {
 
 
     println!("Building and refreshing stats every {} seconds keeping a history depth of {}",polling_secs.to_string(),history_depth.to_string());
 
     let mut file_systems_refresh_cycles: u64 = 900;
+    let mut kubernetes_refresh_cycles: u64 = 900;
+
 
     if file_systems_polling_secs > 0 {
-        file_systems_refresh_cycles = ((60 as f32/polling_secs as f32)*(file_systems_polling_secs as f32/60 as f32)) as u64;
+        file_systems_refresh_cycles = ((60 as f32/cmdn_polling_secs as f32)*(file_systems_polling_secs as f32/60 as f32)) as u64;
     }
+    if kubernetes_polling_secs > 0 {
+        kubernetes_refresh_cycles = ((60 as f32/cmdn_polling_secs as f32)*(kubernetes_polling_secs as f32/60 as f32)) as u64;
+    }
+
 
     let mut loop_count: u64 = 0;
 
@@ -286,6 +292,9 @@ fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usiz
             let mut stats = stats_data.lock().unwrap();
 
             let mut fs_usage : Vec<FileSystemStats> = Vec::new();
+
+            let mut kube_usage : Vec<KubernetesStats> = Vec::new();
+
 
             // Refresh the system
             current_sys.refresh_all();
@@ -319,7 +328,6 @@ fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usiz
 
             if is_file_systems {
                 if (loop_count % file_systems_refresh_cycles) == 0 {
-                    //println!("Refreshing filesystems usagen in cycle {}",loop_count);
                     for fs in file_systems.clone(){
                         let fs_usage_percent= get_fs_use(&current_disks, &fs[1]);
                         fs_usage.push(
@@ -335,6 +343,23 @@ fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usiz
                     fs_usage = last_fs_usage.clone();
                 }
             }
+
+            // if is_kubernetes {
+            //     if (loop_count % kubernetes_refresh_cycles) == 0 {
+            //         //println!("Refreshing filesystems usagen in cycle {}",loop_count);
+            //         for fs in file_systems.clone(){
+            //                 KubernetesStats{
+            //                     fs_name: fs[0].clone(),
+            //                     fs_mount_point: fs[1].clone(),
+            //                     fs_used_percentage: format! ("{:.1}",fs_usage_percent),
+            //                 }
+            //             )
+            //         }
+            //         last_kube_usage = kube_usage.clone();
+            //     } else {
+            //         kube_usage = last_kube_usage.clone();
+            //     }
+            // }
 
             if stats.len() == history_depth {
                 stats.remove(0);
@@ -352,7 +377,7 @@ fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usiz
                         temperature: format! ("{:.1}",temperature),
                     },
                     file_systems_stats: fs_usage.clone(),
-                    kubernetes_stats: Vec::new(),
+                    kubernetes_stats: kube_usage.clone(),
                 }
             );
 
@@ -365,7 +390,7 @@ fn build_stats(polling_secs:i32,file_systems_polling_secs:i32,history_depth:usiz
             // println!("------------------------------------------------------------------------------------------------");
         }
         // Wait sample_sec seconds
-        thread::sleep(time::Duration::from_secs(polling_secs.try_into().unwrap()));
+        thread::sleep(time::Duration::from_secs(cmdn_polling_secs.try_into().unwrap()));
         loop_count += 1;
     }
 }
@@ -388,7 +413,6 @@ async fn main() {
     //API config values
     let listen_ip_addr: String = config_data.api_config.listen_ip_addr;
     let listen_port: String = config_data.api_config.listen_port;
-    let polling_secs: i32 = config_data.api_config.polling_secs.try_into().unwrap();
     let history_depth: usize = config_data.api_config.history_depth;
 
     let get_cpu: bool;
@@ -404,6 +428,7 @@ async fn main() {
     let temp_item: String;
     let temp_item_clone: String;
     let is_temp_item: bool;
+    let cmdn_polling_secs: i32;
 
 
     // Cpu, Mem, Disk, Network config values
@@ -414,6 +439,7 @@ async fn main() {
         get_swap_fs = config_data.cmdn_config.clone().unwrap().get_swap_fs;
         get_net = config_data.cmdn_config.clone().unwrap().get_net;
         get_temperature = config_data.cmdn_config.clone().unwrap().get_temperature;
+        cmdn_polling_secs = config_data.cmdn_config.clone().unwrap().polling_secs.try_into().unwrap();
 
         iface = config_data.cmdn_config.clone().unwrap().iface;
         iface_clone = iface.clone();
@@ -429,6 +455,7 @@ async fn main() {
         get_swap_fs = false;
         get_net = false;
         get_temperature = false;
+        cmdn_polling_secs = 0;
 
         iface = String::from("");
         iface_clone = iface.clone();
@@ -439,26 +466,17 @@ async fn main() {
     }
 
     let file_systems: Vec<[String;2]>;
-    let is_file_systems ;
+    let is_file_systems: bool;
     let file_systems_polling_secs:i32;
 
     // File Systems config values
     if config_data.file_systems_config.is_some(){
-        // let file_systems_clone = config_data
-        //     .filesystems_config
-        //     .unwrap()
-        //     .clone();
-        file_systems= config_data.file_systems_config
+        file_systems = config_data.file_systems_config
             .clone()
             .unwrap()
             .file_systems;
         is_file_systems = file_systems.len()>0;
-        file_systems_polling_secs = config_data.file_systems_config
-            .clone()
-            .unwrap()
-            .polling_secs
-            .try_into()
-            .unwrap();
+        file_systems_polling_secs = config_data.file_systems_config.clone().unwrap().polling_secs.try_into().unwrap();
     }
     else {
         file_systems = Vec::new();
@@ -466,17 +484,38 @@ async fn main() {
         file_systems_polling_secs = 0;
     }
 
-    // let file_systems = match config_data.filesystems_config.is_some(){
-    //     true => config_data.filesystems_config.unwrap().file_systems,
-    //     _ => Vec::new()
-    // };
-    // let file_systems_clone = file_systems.clone();
-    // let is_file_systems: bool = file_systems.len()>0;
+    let master_nodes_ip: Vec<[String;2]>;
+    let worker_nodes_ip: Vec<[String;2]>;
+    let exclude_namespaces: Vec<String>;
+    let kubernetes_polling_secs:i32;
+    let is_kubernetes: bool;
 
-    // let file_systems_polling_secs:i32 = match config_data.filesystems_config.is_some(){
-    //     true => config_data.filesystems_config.unwrap().polling_secs.try_into().unwrap(),
-    //     _ => 0,
-    // };
+    // Kubernetes config values
+    if config_data.kubernetes_config.is_some(){
+
+        master_nodes_ip = config_data.kubernetes_config
+            .clone()
+            .unwrap()
+            .master_nodes_ip;
+        worker_nodes_ip = config_data.kubernetes_config
+            .clone()
+            .unwrap()
+            .worker_nodes_ip;
+        exclude_namespaces = config_data.kubernetes_config
+            .clone()
+            .unwrap()
+            .exclude_namespaces;
+        kubernetes_polling_secs = config_data.kubernetes_config.clone().unwrap().polling_secs.try_into().unwrap();
+        is_kubernetes = master_nodes_ip.len()>0;
+    }
+    else {
+        master_nodes_ip = Vec::new();
+        worker_nodes_ip = Vec::new();
+        exclude_namespaces = Vec::new();
+        kubernetes_polling_secs = 0;
+        is_kubernetes = false;
+    }
+
 
     println!("------------------------------------------------------------------------");
     println!("           stats-exporter v.{}", VERSION);
@@ -486,100 +525,127 @@ async fn main() {
     println!("------------------------------------------------------------------------");
     println!("  Listen ip address:         ´{}´", listen_ip_addr);
     println!("  Listen port:               ´{}´", listen_port);
-    println!("  Sample seconds:            ´{}´", polling_secs.to_string());
     println!("  History depth:             ´{}´", history_depth.to_string());
+    println!("------------------------------------------------------------------------");
+    println!("  Get CPU stats:             ´{}´", get_cpu);
+    println!("  Get MEMORY stats:          ´{}´", get_mem);
+    println!("  Get ROOT filesystem stats: ´{}´", get_root_fs);
+    println!("  Get SWAP filesystem stats: ´{}´", get_swap_fs);
+    println!("  Get NETWORK stats:         ´{}´", get_net);
     println!("  Network Interface:         ´{}´", iface);
+    println!("  Get Temperature stats:     ´{}´", get_temperature);
     println!("  Temperature item:          ´{}´", temp_item);
+    println!("  Polling seconds:           ´{}´", cmdn_polling_secs.to_string());
     if is_file_systems{
+        println!("------------------------------------------------------------------------");
         println!("  File Systems:              ");
         for fs in file_systems{
             println!("                             ´{}´->´{}´",fs[0],fs[1]);
         }
-        println!("  File Systems Sample secs:  ´{}´", file_systems_polling_secs);
+        println!("  File Systems Polling secs: ´{}´", file_systems_polling_secs);
     } else {
         println!("  No filesystem is configured to gather usage stats data");
     }
 
+    if is_kubernetes{
+        println!("------------------------------------------------------------------------");
+        println!("  Master Nodes:              ");
+        for masternodes in master_nodes_ip{
+            println!("                             ´{}´->´{}´",masternodes[0],masternodes[1]);
+        }
+        println!("  Worker Nodes:              ");
+        for workernodes in worker_nodes_ip{
+            println!("                             ´{}´->´{}´",workernodes[0],workernodes[1]);
+        }
+        println!("  Excluded namespaces:              ");
+        for ex_namespaces in exclude_namespaces{
+            println!("                             ´{}´",ex_namespaces);
+        }
+        println!("  Kubernetes Polling secs:   ´{}´", kubernetes_polling_secs);
+    } else {
+        println!("  No kubernetes section is configured to gather usage stats data");
+    }
+
     println!("------------------------------------------------------------------------\n");
 
-//     let stats_data: Arc<Mutex<Vec<Usage>>> = Arc::new(Mutex::new(Vec::new()));
-//     let stats_thread_data = Arc::clone(&stats_data);
+    let stats_data: Arc<Mutex<Vec<Stats>>> = Arc::new(Mutex::new(Vec::new()));
+    let stats_thread_data = Arc::clone(&stats_data);
 
-//     std::thread::spawn( move || {
-//         build_stats(polling_secs,file_systems_polling_secs,history_depth,iface,temp_item,file_systems,stats_thread_data);
-//     });
+    std::thread::spawn( move || {
+        build_stats(cmdn_polling_secs,file_systems_polling_secs,history_depth,iface,temp_item,file_systems.as_ref(),stats_thread_data);
+    });
 
-//     let api_thread_data = Arc::clone(&stats_data);
+    let api_thread_data = Arc::clone(&stats_data);
 
-//     let mut help = String::from("");
-//     if is_iface_total {
-//         if is_temp_item {
-//             help = format!(
-// "Hello from getStats! \n\n
-// Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
-// and\n    .-temperature sensor {} \n
-// and\n    .-total bandwitdth (all interfaces)\n
-// every {} seconds with a history depth of {} \n\n
-// Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
-//                 temp_item_clone.to_string(),
-//                 polling_secs.to_string(),
-//                 history_depth.to_string()
-//             );
-//         } else {
-//             help = format!(
-// "Hello from getStats! \n\n
-// Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
-// and total bandwitdth (all interfaces)\n
-// every {} seconds with a history depth of {} \n\n
-// Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
-//                 polling_secs.to_string(),
-//                 history_depth.to_string()
-//             );
-//         }
-//     } else {
-//         if is_temp_item {
-//             help = format!(
-// "Hello from getStats! \n\n
-// Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
-// and\n    .-temperature sensor {}\n
-// and\n    .-bandwitdth on interface {}\n
-// every {} seconds with a history depth of {} \n\n
-// Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
-//                 temp_item_clone.to_string(),
-//                 iface_clone.to_string(),
-//                 polling_secs.to_string(),
-//                 history_depth.to_string()
-//             );
-//         } else {
-//             help = format!(
-// "Hello from getStats! \n\n
-// Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
-// and\n    .-bandwitdth on interface {}\n
-// every {} seconds with a history depth of {} \n\n
-// Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
-//                 iface_clone.to_string(),
-//                 polling_secs.to_string(),
-//                 history_depth.to_string()
-//             );
-//         }
-//     }
+    let mut help = String::from("");
+    if is_iface_total {
+        if is_temp_item {
+            help = format!(
+"Hello from getStats! \n\n
+Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
+and\n    .-temperature sensor {} \n
+and\n    .-total bandwitdth (all interfaces)\n
+every {} seconds with a history depth of {} \n\n
+Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
+                temp_item_clone.to_string(),
+                cmdn_polling_secs.to_string(),
+                history_depth.to_string()
+            );
+        } else {
+            help = format!(
+"Hello from getStats! \n\n
+Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
+and total bandwitdth (all interfaces)\n
+every {} seconds with a history depth of {} \n\n
+Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
+                cmdn_polling_secs.to_string(),
+                history_depth.to_string()
+            );
+        }
+    } else {
+        if is_temp_item {
+            help = format!(
+"Hello from getStats! \n\n
+Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
+and\n    .-temperature sensor {}\n
+and\n    .-bandwitdth on interface {}\n
+every {} seconds with a history depth of {} \n\n
+Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
+                temp_item_clone.to_string(),
+                iface_clone.to_string(),
+                cmdn_polling_secs.to_string(),
+                history_depth.to_string()
+            );
+        } else {
+            help = format!(
+"Hello from getStats! \n\n
+Currently building usage statistics for \n    .- cpu,\n    .- memory,\n    .- root filesystem,\n    .- swap,\n
+and\n    .-bandwitdth on interface {}\n
+every {} seconds with a history depth of {} \n\n
+Use: \n    /get-stats url to acccess usage statistics\n    /get-ntwk-items url to get the names of the network interfaces available \n    /get-temp-items url to get the list of temperature sensors available",
+                iface_clone.to_string(),
+                cmdn_polling_secs.to_string(),
+                history_depth.to_string()
+            );
+        }
+    }
 
-//     // API listener
-//     let app = axum::Router::new()
-//     .route("/", get( move || async { help }))
-//     .route("/get-stats", get(api_get_stats))
-//     .route("/get-temp-items", get(api_get_temp_items))
-//     .route("/get-ntwk-items", get(api_get_ntwk_items))
-//     .with_state(api_thread_data);
+    // API listener
+    let app = axum::Router::new()
+    .route("/", get( move || async { help }))
+    .route("/get-stats", get(api_get_stats))
+    .route("/get-temp-items", get(api_get_temp_items))
+    .route("/get-ntwk-items", get(api_get_ntwk_items))
+    .with_state(api_thread_data);
 
-//     println!("API running on http://{}:{}",listen_ip_addr,listen_port);
+    println!("API running on http://{}:{}",listen_ip_addr,listen_port);
 
-//     // Start Server
-//     let listener = tokio::net::TcpListener::bind(format!("{}:{}",listen_ip_addr,listen_port)).await.unwrap();
-//     axum::serve(listener,app).await.unwrap();
-//     // axum::Server::bind(&format!("{}:{}",listen_ip_addr,listen_port).parse().unwrap())
-//     //     .serve(app.into_make_service())
-//     //     .await
-//     //     .unwrap();
+    // Start Server
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}",listen_ip_addr,listen_port)).await.unwrap();
+    axum::serve(listener,app).await.unwrap();
+    // axum::Server::bind(&format!("{}:{}",listen_ip_addr,listen_port).parse().unwrap())
+    //     .serve(app.into_make_service())
+    //     .await
+    //     .unwrap();
 
 }
