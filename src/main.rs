@@ -2,7 +2,7 @@ pub mod config;
 
 use log::{error, info, warn};
 
-use config::{read_config,ConfigData};
+use config::{read_config,ConfigData, APIConfig, CMDNConfig, FileSystemsConfig, KubernetesConfig};
 
 use serde::{Serialize,Deserialize};
 use serde_json::json;
@@ -263,6 +263,7 @@ fn build_stats( cmdn_polling_secs:i32,
                 file_systems:Vec<[String;2]>,
                 master_nodes_ip:Vec<[String;2]>,
                 worker_nodes_ip:Vec<[String;2]>,
+                exclude_namespaces:Vec<String>,
                 stats_data: Arc<Mutex<Vec<Stats>>>) {
 
 
@@ -424,6 +425,11 @@ async fn main() {
     let listen_port: String = config_data.api_config.listen_port;
     let history_depth: usize = config_data.api_config.history_depth;
 
+    let API_config: APIConfig = APIConfig::new(
+        listen_ip_addr,
+        listen_port,
+        history_depth);
+
     let get_cpu: bool;
     let get_mem: bool;
     let get_root_fs: bool;
@@ -474,6 +480,18 @@ async fn main() {
         is_temp_item = false;
     }
 
+    let cmdn_config: CMDNConfig = CMDNConfig::new(
+        get_cpu,
+        get_mem,
+        get_root_fs,
+        get_swap_fs,
+        get_net,
+        iface,
+        get_temperature,
+        temp_item,
+        cmdn_polling_secs);
+
+
     let file_systems: Vec<[String;2]>;
     let is_file_systems: bool;
     let file_systems_polling_secs:i32;
@@ -492,6 +510,10 @@ async fn main() {
         is_file_systems = false;
         file_systems_polling_secs = 0;
     }
+
+    let filesystems_config: FileSystemsConfig = FileSystemsConfig::new(
+        file_systems,
+        file_systems_polling_secs);
 
     let master_nodes_ip: Vec<[String;2]>;
     let worker_nodes_ip: Vec<[String;2]>;
@@ -524,6 +546,12 @@ async fn main() {
         kubernetes_polling_secs = 0;
         is_kubernetes = false;
     }
+
+    let kubernetes_config: KubernetesConfig = KubernetesConfig::new(
+        master_nodes_ip,
+        worker_nodes_ip,
+        exclude_namespaces,
+        kubernetes_polling_secs);
 
 
     println!("------------------------------------------------------------------------");
@@ -588,9 +616,10 @@ async fn main() {
             history_depth,
             iface,
             temp_item,
-            file_systems.clone(),
-            master_nodes_ip.clone(),
-            worker_nodes_ip.clone(),
+            file_systems,
+            master_nodes_ip,
+            worker_nodes_ip,
+            exclude_namespaces,
             stats_thread_data);
     });
 

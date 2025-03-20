@@ -8,18 +8,34 @@ use toml;
 #[derive(Serialize, Deserialize,Clone)]
 pub struct ConfigData {
     pub api_config: APIConfig,
-    pub cmdn_config: Option<CMDNStatsConfig>,
+    pub cmdn_config: Option<CMDNConfig>,
     pub file_systems_config: Option<FileSystemsConfig>,
     pub kubernetes_config: Option<KubernetesConfig>,
 }
+
+// ------------------------------------------------------------------
+
 #[derive(Serialize, Deserialize,Clone)]
 pub struct APIConfig {
     pub listen_ip_addr: String,
     pub listen_port: String,
     pub history_depth: usize,
 }
+
+impl APIConfig {
+    pub fn new(listen_ip_addr: String, listen_port: String, history_depth: usize) -> Self {
+        APIConfig {
+            listen_ip_addr,
+            listen_port,
+            history_depth,
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+
 #[derive(Serialize, Deserialize,Clone)]
-pub struct CMDNStatsConfig {
+pub struct CMDNConfig {
     pub get_cpu: bool,
     pub get_mem: bool,
     pub get_root_fs: bool,
@@ -30,11 +46,53 @@ pub struct CMDNStatsConfig {
     pub temperature_item: String,
     pub polling_secs: usize,
 }
+
+impl CMDNConfig {
+    pub fn new(
+        get_cpu: bool,
+        get_mem: bool,
+        get_root_fs: bool,
+        get_swap_fs: bool,
+        get_net: bool,
+        iface: String,
+        get_temperature: bool,
+        temperature_item: String,
+        polling_secs: i32,
+    ) -> Self {
+        CMDNConfig {
+            get_cpu,
+            get_mem,
+            get_root_fs,
+            get_swap_fs,
+            get_net,
+            iface,
+            get_temperature,
+            temperature_item,
+            polling_secs,
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+
+
 #[derive(Serialize, Deserialize,Clone)]
 pub struct FileSystemsConfig {
     pub file_systems: Vec<[String;2]>,
     pub polling_secs: usize,
 }
+
+impl FileSystemsConfig {
+    pub fn new(file_systems: Vec<[String; 2]>, polling_secs: i32) -> Self {
+        FileSystemsConfig {
+            file_systems,
+            polling_secs,
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+
 #[derive(Serialize, Deserialize,Clone)]
 pub struct KubernetesConfig {
     pub master_nodes_ip: Vec<[String;2]>,
@@ -42,11 +100,32 @@ pub struct KubernetesConfig {
     pub exclude_namespaces: Vec<String>,
     pub polling_secs: usize,
 }
+
+impl KubernetesConfig {
+    pub fn new(
+        master_nodes_ip: Vec<[String; 2]>,
+        worker_nodes_ip: Vec<[String; 2]>,
+        exclude_namespaces: Vec<String>,
+        polling_secs: i32,
+    ) -> Self {
+        KubernetesConfig {
+            master_nodes_ip,
+            worker_nodes_ip,
+            exclude_namespaces,
+            polling_secs,
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+
 #[derive(Serialize, Deserialize,Clone)]
 pub struct DescrValuePair {
     pub description: String,
     pub value: String,
 }
+
+// ------------------------------------------------------------------
 
 pub fn read_config(toml_filename: &str) -> ConfigData{
     // Read the contents of the file using a `match` block
