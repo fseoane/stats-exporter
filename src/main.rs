@@ -318,12 +318,12 @@ fn build_stats(cmdn_polling_secs:i32,file_systems_polling_secs:i32,kubernetes_po
             let ntwk_dwn ;
             let ntwk_up ;
             if iface == "total" {
-                ntwk_dwn = get_tot_ntwk_dwn(&current_net,&polling_secs);
-                ntwk_up = get_tot_ntwk_up(&current_net,&polling_secs);
+                ntwk_dwn = get_tot_ntwk_dwn(&current_net,&cmdn_polling_secs);
+                ntwk_up = get_tot_ntwk_up(&current_net,&cmdn_polling_secs);
             }
             else{
-                ntwk_dwn = get_iface_ntwk_dwn(&current_net,&polling_secs,&iface);
-                ntwk_up = get_iface_ntwk_up(&current_net,&polling_secs,&iface);
+                ntwk_dwn = get_iface_ntwk_dwn(&current_net,&cmdn_polling_secs,&iface);
+                ntwk_up = get_iface_ntwk_up(&current_net,&cmdn_polling_secs,&iface);
             }
 
             if is_file_systems {
@@ -554,7 +554,7 @@ async fn main() {
             println!("                             ´{}´->´{}´",masternodes[0],masternodes[1]);
         }
         println!("  Worker Nodes:              ");
-        for workernodes in worker_nodes_ip{
+        for workernodes  in worker_nodes_ip{
             println!("                             ´{}´->´{}´",workernodes[0],workernodes[1]);
         }
         println!("  Excluded namespaces:              ");
@@ -569,15 +569,15 @@ async fn main() {
     println!("------------------------------------------------------------------------\n");
 
     let stats_data: Arc<Mutex<Vec<Stats>>> = Arc::new(Mutex::new(Vec::new()));
-    let stats_thread_data = Arc::clone(&stats_data);
+    let stats_thread_data: Arc<Mutex<Vec<Stats>>> = Arc::clone(&stats_data);
 
     std::thread::spawn( move || {
-        build_stats(cmdn_polling_secs,file_systems_polling_secs,history_depth,iface,temp_item,file_systems.as_ref(),stats_thread_data);
+        build_stats(cmdn_polling_secs,file_systems_polling_secs,kubernetes_polling_secs,history_depth,iface,temp_item,file_systems.clone(),stats_thread_data);
     });
 
-    let api_thread_data = Arc::clone(&stats_data);
+    let api_thread_data:Arc<Mutex<Vec<Stats>>> = Arc::clone(&stats_data);
 
-    let mut help = String::from("");
+    let mut help: String = String::from("");
     if is_iface_total {
         if is_temp_item {
             help = format!(
