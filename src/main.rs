@@ -257,7 +257,7 @@ async fn api_get_ntwk_items() -> Json<Vec<String>> {
 fn build_stats(cmdn_polling_secs:i32,file_systems_polling_secs:i32,kubernetes_polling_secs:i32,history_depth:usize,iface:String,temp_item:String,file_systems:Vec<[String;2]>, stats_data: Arc<Mutex<Vec<Stats>>>) {
 
 
-    println!("Building and refreshing stats every {} seconds keeping a history depth of {}",polling_secs.to_string(),history_depth.to_string());
+    println!("Building and refreshing stats every {} seconds keeping a history depth of {}",cmdn_polling_secs.to_string(),history_depth.to_string());
 
     let mut file_systems_refresh_cycles: u64 = 900;
     let mut kubernetes_refresh_cycles: u64 = 900;
