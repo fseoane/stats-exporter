@@ -9,7 +9,7 @@ use toml;
 pub struct ConfigData {
     pub api_config: APIConfig,
     pub cmdn_config: Option<CMDNStatsConfig>,
-    pub filesystems_config: Option<FileSystemsConfig>,
+    pub file_systems_config: Option<FileSystemsConfig>,
     pub kubernetes_config: Option<KubernetesConfig>,
 }
 #[derive(Serialize, Deserialize,Clone)]
@@ -21,13 +21,13 @@ pub struct APIConfig {
 }
 #[derive(Serialize, Deserialize,Clone)]
 pub struct CMDNStatsConfig {
-    pub cpu: bool,
-    pub mem: bool,
-    pub root_fs: bool,
-	pub swap_fs: bool,
-	pub net: bool,
+    pub get_cpu: bool,
+    pub get_mem: bool,
+    pub get_root_fs: bool,
+	pub get_swap_fs: bool,
+	pub get_net: bool,
 	pub iface: String,
-    pub temperature: bool,
+    pub get_temperature: bool,
     pub temperature_item: String,
 }
 #[derive(Serialize, Deserialize,Clone)]
@@ -49,14 +49,14 @@ pub struct DescrValuePair {
 }
 
 pub fn read_config(toml_filename: &str) -> ConfigData{
-    // Read the contents of the file using a `match` block 
-    // to return the `data: Ok(c)` as a `String` 
+    // Read the contents of the file using a `match` block
+    // to return the `data: Ok(c)` as a `String`
     // or handle any `errors: Err(_)`.
     let toml_contents:String = match std::fs::read_to_string(toml_filename) {
         // If successful return the files text as `contents`.
         // `c` is a local variable.
         Ok(c) => c,
-            
+
         // Handle the `error` case.
         Err(_) => {
             // Write `msg` to `stderr`.
@@ -66,7 +66,7 @@ pub fn read_config(toml_filename: &str) -> ConfigData{
         }
     };
 
-    // Use a `match` block to return the 
+    // Use a `match` block to return the
     // file `contents` as a `Data struct: Ok(d)`
     // or handle any `errors: Err(_)`.
     let config_data: ConfigData = match toml::from_str(&toml_contents) {
